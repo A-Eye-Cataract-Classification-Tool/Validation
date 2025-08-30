@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import math
 
-# --- Pre-processing and Utility Functions (Largely Unchanged) ---
+# --- Pre-processing and Utility Functions ---
 def is_blurry(image, threshold=60.0):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
@@ -48,7 +48,6 @@ def detect_eyes(image):
     x, y, w, h = max(eyes, key=lambda rect: rect[2] * rect[3])
     original_coords = (x, y, w, h)
     
-    # Add padding for a better visual ROI
     padding_w = int(w * 0.15)
     padding_h = int(h * 0.15)
     img_h, img_w = image.shape[:2]
@@ -62,7 +61,7 @@ def detect_eyes(image):
 
 def find_pupil(eye_image_gray, original_eye_width):
     """
-    ## REVISED ##: A much more robust pupil detector using a scoring system.
+    ## Pupil detector using a scoring system:
     It now evaluates candidate circles based on a combination of their
     centrality, and most importantly, the darkness of their interior.
     This prevents it from locking onto bright reflections or the iris.
@@ -82,7 +81,6 @@ def find_pupil(eye_image_gray, original_eye_width):
         param1=50, param2=30, minRadius=min_rad, maxRadius=max_rad
     )
     
-    # 3. ## NEW ## Scoring and Selection Logic
     if circles is not None:
         best_circle = None
         min_score = float('inf')
@@ -91,7 +89,6 @@ def find_pupil(eye_image_gray, original_eye_width):
         for c in circles[0, :]:
             x, y, r = int(c[0]), int(c[1]), int(c[2])
             
-            # Create a mask for the current circle to analyze its interior
             mask = np.zeros(processed_eye.shape, dtype=np.uint8)
             cv2.circle(mask, (x, y), r, 255, -1)
             
@@ -135,8 +132,8 @@ def analyze_cataract_features(pupil_pixels_gray, pupil_pixels_color, pupil_area,
 
 def classify_cataract(features):
     """
-    ## REVISED ##: A more robust and sensitive scoring system.
-    This new logic is better at detecting clear cataracts and less prone
+    ## Scoring system:
+    This logic is better at detecting clear cataracts and less prone
     to false negatives. It uses a weighted score instead of rigid rules.
     """
     if features is None:
@@ -149,7 +146,6 @@ def classify_cataract(features):
     reasons = []
 
     # 1. Intensity Score (heavily weighted)
-    # This is the most reliable indicator.
     intensity = features['intensity']
     if intensity > 100:
         score += (intensity - 100) / 20.0  # Add 1 point for every 20 units over 100
@@ -212,22 +208,17 @@ def analyze_image_cli(image_path, visualize=False):
         print("Result: Invalid (Blurry Image)")
         return
 
-    # ## REVISED LOGIC ##
-    # Get both original and padded eye coordinates
     original_eye_coords, padded_eye_coords = detect_eyes(original_image)
     if original_eye_coords is None:
         print("Result: Invalid (No Eye Found)")
         return
         
-    # Use the padded coordinates to define the ROI for processing
     px, py, pw, ph = padded_eye_coords
     eye_roi_color_full = original_image[py:py+ph, px:px+pw]
     
     enhanced_eye_gray, enhanced_eye_color = enhance_image(eye_roi_color_full)
     clean_eye = remove_reflections(enhanced_eye_gray)
 
-    # ## REVISED LOGIC ##
-    # Pass the ORIGINAL eye width to the pupil finder
     _, _, original_w, _ = original_eye_coords
     pupil_mask, pupil_circle = find_pupil(clean_eye, original_w)
     
@@ -249,26 +240,13 @@ def analyze_image_cli(image_path, visualize=False):
     print(f"Reasoning:\n{analysis_reason}")
 
     if visualize:
-        # Define the name for the output directory 📁
         output_dir = "analysis_outputs"
-        
-        # Create the directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
-        
-        # Create the visualization image
         vis_image = visualize_analysis(original_image, padded_eye_coords, pupil_circle, is_cataract, reasons_list)
         
-        # --- Create the new output path ---
-        # 1. Get the base filename from the input path (e.g., "image_d28700.jpg")
         base_filename = os.path.basename(image_path)
-        
-        # 2. Get the name without the extension (e.g., "image_d28700")
         name_only = os.path.splitext(base_filename)[0]
-        
-        # 3. Create the full path for the new file inside the output directory
         output_path = os.path.join(output_dir, f"{name_only}_analysis.jpg")
-        
-        # Save the image to the new path
         cv2.imwrite(output_path, vis_image)
         print(f"\nSaved visualization to: {output_path}")
 
